@@ -59,6 +59,7 @@ elbow_motor = LargeMotor(OUTPUT_D)
 roll_motor = remote_motor.MediumMotor(remote_motor.OUTPUT_A)
 pitch_motor = remote_motor.MediumMotor(remote_motor.OUTPUT_B)
 spin_motor = remote_motor.MediumMotor(remote_motor.OUTPUT_C)
+grabber_motor = remote_motor.MediumMotor(remote_motor.OUTPUT_D)
 
 waist_motor.position = 0
 shoulder_control1.position = 0
@@ -68,6 +69,7 @@ elbow_motor.position = 0
 roll_motor.position = 0
 pitch_motor.position = 0
 spin_motor.position = 0
+grabber_motor.position = 0
 
 waist_ratio = 7.5
 shoulder_ratio = 7.5
@@ -75,11 +77,12 @@ elbow_ratio = 5
 roll_ratio = 7
 pitch_ratio = 5
 spin_ratio = 7
+grabber_ratio = 24
 
 waist_max = 360
 waist_min = -360
-shoulder_max = -75
-shoulder_min = 65
+shoulder_max = -60 #-75 max without grabber
+shoulder_min = 50 #65 min without grabber
 elbow_max = -175
 elbow_min = 0
 roll_max = 180
@@ -88,6 +91,8 @@ pitch_max = 80
 pitch_min = -90
 spin_max = -360
 spin_min = 360
+grabber_max = -68
+grabber_min = 0
 
 full_speed = 100
 fast_speed = 75
@@ -112,6 +117,9 @@ pitch_down = False
 spin_left = False
 spin_right = False
 
+grabber_open = False
+grabber_close = False
+
 running = True
 
 class MotorThread(threading.Thread):
@@ -130,6 +138,48 @@ class MotorThread(threading.Thread):
         leds.set_color("RIGHT", "GREEN")
         remote_leds.set_color("LEFT", "GREEN")
         remote_leds.set_color("RIGHT", "GREEN")
+
+        """
+        #Calibrations
+        waist_motor.on_to_position(fast_speed,(waist_max/2)*waist_ratio,True,True) #Right
+        waist_motor.on_to_position(fast_speed,(waist_min/2)*waist_ratio,True,True) #Left
+        waist_motor.on_to_position(fast_speed,0,True,True)
+
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_max*shoulder_ratio,True,True) #Forward
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,-shoulder_max*shoulder_ratio,True,True) 
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_min*shoulder_ratio,True,True) #Backward
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,-shoulder_min*shoulder_ratio,True,True)
+
+        elbow_motor.on_to_position(normal_speed,elbow_max*elbow_ratio,True,True) #Up
+        elbow_motor.on_to_position(normal_speed,elbow_min*elbow_ratio,True,True) #Down
+
+        roll_motor.on_to_position(normal_speed,(roll_max/2)*roll_ratio,True,True) #Right
+        roll_motor.on_to_position(normal_speed,(roll_min/2)*roll_ratio,True,True) #Left
+        roll_motor.on_to_position(normal_speed,0,True,True)
+
+        pitch_motor.on_to_position(normal_speed,pitch_max*pitch_ratio,True,True) #Up
+        pitch_motor.on_to_position(normal_speed,pitch_min*pitch_ratio,True,True) #Down
+        pitch_motor.on_to_position(normal_speed,0,True,True)
+
+        spin_motor.on_to_position(normal_speed,(spin_max/2)*spin_ratio,True,True) #Right
+        spin_motor.on_to_position(normal_speed,(spin_min/2)*spin_ratio,True,True) #Left
+        spin_motor.on_to_position(normal_speed,0,True,True)
+
+        grabber_motor.on_to_position(normal_speed,grabber_max*grabber_ratio,True,True) #Close
+        grabber_motor.on_to_position(normal_speed,grabber_min*grabber_ratio,True,True) #Open
+
+        #Reach
+        elbow_motor.on_to_position(normal_speed,-90*elbow_ratio,True,False) #Up
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_max*shoulder_ratio,True,True) #Forward
+        waist_motor.on_to_position(fast_speed,waist_max*waist_ratio,True,True) #Right
+        elbow_motor.on_to_position(normal_speed,elbow_max*elbow_ratio,True,False) #Up
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,75*shoulder_ratio,True,True) #Reset
+        elbow_motor.on_to_position(normal_speed,-90*elbow_ratio,True,False) #Down
+        shoulder_motor.on_for_degrees(normal_speed,normal_speed,65*shoulder_ratio,True,True) #Backward
+        waist_motor.on_to_position(fast_speed,0,True,True) #Center
+        elbow_motor.on_to_position(slow_speed,elbow_min*elbow_ratio,True,True) #Reset
+        shoulder_motor.on_for_degrees(slow_speed,slow_speed,-65*shoulder_ratio,True,True) #Reset
+        """
 
         while running:
             if forward_speed > 0 and shoulder_control1.position > ((shoulder_max*shoulder_ratio)+100):
@@ -174,12 +224,22 @@ class MotorThread(threading.Thread):
             else:
                 spin_motor.stop()
 
+            if grabber_open:
+                grabber_motor.on_to_position(normal_speed,grabber_max*grabber_ratio,True,True) #Close
+                grabber_motor.stop()
+            elif grabber_close:
+                grabber_motor.on_to_position(normal_speed,grabber_min*grabber_ratio,True,True) #Open
+                grabber_motor.stop()
+            else:
+                grabber_motor.stop()
+
         waist_motor.stop()
         shoulder_motor.stop()
         elbow_motor.stop()
         roll_motor.stop()
         pitch_motor.stop()
         spin_motor.stop()
+        grabber_motor.stop()
 
 motor_thread = MotorThread()
 motor_thread.setDaemon(True)
@@ -244,49 +304,23 @@ for event in gamepad.read_loop():   #this loops infinitely
     elif event.type == 1 and event.code == 313 and event.value == 0:
         spin_right = False
 
+    if event.type == 1 and event.code == 318 and event.value == 1:  #R3
+        if grabber_open:
+            grabber_open = False
+            grabber_close = True
+        else:
+            grabber_open = True
+            grabber_close = False
+
     if event.type == 1 and event.code == 314 and event.value == 1:  #Share
         #Demo
-        waist_motor.on_to_position(fast_speed,waist_max*waist_ratio,True,True) #Right
-        waist_motor.on_to_position(fast_speed,waist_min*waist_ratio,True,True) #Left
-        waist_motor.on_to_position(fast_speed,0,True,True)
-
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_max*shoulder_ratio,True,True) #Forward
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,-shoulder_max*shoulder_ratio,True,True) 
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_min*shoulder_ratio,True,True) #Backward
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,-shoulder_min*shoulder_ratio,True,True)
-
-        elbow_motor.on_to_position(normal_speed,elbow_max*elbow_ratio,True,True) #Up
-        elbow_motor.on_to_position(normal_speed,elbow_min*elbow_ratio,True,True) #Down
-
-        roll_motor.on_to_position(normal_speed,roll_max*roll_ratio,True,True) #Right
-        roll_motor.on_to_position(normal_speed,roll_min*roll_ratio,True,True) #Left
-        roll_motor.on_to_position(normal_speed,0,True,True)
-
-        pitch_motor.on_to_position(normal_speed,pitch_max*pitch_ratio,True,True) #Up
-        pitch_motor.on_to_position(normal_speed,pitch_min*pitch_ratio,True,True) #Down
-        pitch_motor.on_to_position(normal_speed,0,True,True)
-
-        spin_motor.on_to_position(normal_speed,spin_max*spin_ratio,True,True) #Right
-        spin_motor.on_to_position(normal_speed,spin_min*spin_ratio,True,True) #Left
-        spin_motor.on_to_position(normal_speed,0,True,True)
-
-        #Reach
-        elbow_motor.on_to_position(normal_speed,-90*elbow_ratio,True,False) #Up
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,shoulder_max*shoulder_ratio,True,True) #Forward
-        waist_motor.on_to_position(fast_speed,waist_max*waist_ratio,True,True) #Right
-        elbow_motor.on_to_position(normal_speed,elbow_max*elbow_ratio,True,False) #Up
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,75*shoulder_ratio,True,True) #Reset
-        elbow_motor.on_to_position(normal_speed,-90*elbow_ratio,True,False) #Down
-        shoulder_motor.on_for_degrees(normal_speed,normal_speed,65*shoulder_ratio,True,True) #Backward
-        waist_motor.on_to_position(fast_speed,0,True,True) #Center
-        elbow_motor.on_to_position(slow_speed,elbow_min*elbow_ratio,True,True) #Reset
-        shoulder_motor.on_for_degrees(slow_speed,slow_speed,-65*shoulder_ratio,True,True) #Reset
 
     if event.type == 1 and event.code == 315 and event.value == 1:  #Options
         #Reset
         roll_motor.on_to_position(normal_speed,0,True,False)
         pitch_motor.on_to_position(normal_speed,0,True,False)
-        spin_motor.on_to_position(normal_speed,0,True,True)
+        spin_motor.on_to_position(normal_speed,0,True,False)
+        grabber_motor.on_to_position(normal_speed,0,True,True)
         elbow_motor.on_to_position(slow_speed,0,True,False)
         shoulder_control1.on_to_position(slow_speed,0,True,False)
         shoulder_control2.on_to_position(slow_speed,0,True,False)
@@ -299,7 +333,8 @@ for event in gamepad.read_loop():   #this loops infinitely
         #Reset
         roll_motor.on_to_position(normal_speed,0,True,False)
         pitch_motor.on_to_position(normal_speed,0,True,False)
-        spin_motor.on_to_position(normal_speed,0,True,True)
+        spin_motor.on_to_position(normal_speed,0,True,False)
+        grabber_motor.on_to_position(normal_speed,0,True,True)
         elbow_motor.on_to_position(slow_speed,0,True,False)
         shoulder_control1.on_to_position(slow_speed,0,True,False)
         shoulder_control2.on_to_position(slow_speed,0,True,False)
