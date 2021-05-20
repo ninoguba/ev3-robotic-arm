@@ -312,8 +312,8 @@ for event in gamepad.read_loop():   #this loops infinitely
             grabber_open = True
             grabber_close = False
 
-    if event.type == 1 and event.code == 314 and event.value == 1:  #Share
-        #Demo
+    # if event.type == 1 and event.code == 314 and event.value == 1:  #Share
+    #     #Demo
 
     if event.type == 1 and event.code == 315 and event.value == 1:  #Options
         #Reset
