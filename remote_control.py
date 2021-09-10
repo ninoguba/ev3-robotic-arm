@@ -22,6 +22,7 @@ from signal import signal, SIGINT
 from ev3dev2 import DeviceNotFound
 from ev3dev2.led import Leds
 from ev3dev2.sensor import INPUT_1
+from ev3dev2.sensor.lego import ColorSensor
 from ev3dev2.motor import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D, LargeMotor, MoveTank
 from ev3dev2.power import PowerSupply
 
@@ -97,6 +98,15 @@ remote_power = remote_power_mod.PowerSupply(name_pattern='*ev3*')
 # sound = Sound()
 
 # Primary EV3
+# Sensors
+try:
+    color_sensor = ColorSensor(INPUT_1)
+    color_sensor.mode = ColorSensor.MODE_COL_COLOR
+    logger.info("Color sensor detected!")
+except DeviceNotFound:
+    logger.info("Color sensor not detected - running without it...")
+    color_sensor = False
+
 # Motors
 waist_motor = LargeMotor(OUTPUT_A)
 shoulder_motors = MoveTank(OUTPUT_B, OUTPUT_C)
@@ -146,6 +156,45 @@ def log_power_info():
     logger.info('Remote battery power: {}V / {}A'.format(round(remote_power.measured_volts, 2), round(remote_power.measured_amps, 2)))
 
 
+speed_modifier = 0
+def map_speed(speed):
+    if speed_modifier == 0:
+        return speed
+    elif speed_modifier == -1:  # dpad up
+        return speed * 1.5
+    elif speed_modifier == 1:  # dpad down
+        return speed / 1.5
+    
+
+base_to_color = 0
+moving_to_color = False
+def move_base_to_color(base_to_color):
+    if base_to_color == -1:
+        target_color = ColorSensor.COLOR_RED
+    elif base_to_color == 1:
+        target_color = ColorSensor.COLOR_BLUE
+    else:
+        return
+    
+    global moving_to_color
+    moving_to_color = True
+    if color_sensor.color != target_color:
+        print('Moving to color {}...'.format(target_color))
+        waist_motor.on(NORMAL_SPEED)
+        max_iterations = 100
+        iterations = 0
+        while color_sensor.color != target_color:
+            time.sleep(0.1)
+            iterations += 1
+            if iterations >= max_iterations:
+                print('Failed to align base to requested color {}'.format(target_color))
+                break
+
+        waist_motor.stop()
+
+    moving_to_color = False
+
+
 def clean_shutdown(signal_received=None, frame=None):
     """ make sure all motors are stopped when stopping this script """
     logger.info('Shutting down...')
@@ -180,12 +229,25 @@ def clean_shutdown(signal_received=None, frame=None):
     sys.exit(0)
 
 
+class BaseAlignThread(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+
+    def run(self):
+        logger.info("BaseAlignThread running!")
+        while running:
+            if base_to_color != 0 and not moving_to_color:
+                move_base_to_color(base_to_color)
+            time.sleep(2)  # prevent performance impact, drawback is you need to hold the button for a bit before it registers
+        logger.info("BaseAlignThread stopping!")
+
+
 class MotorThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
 
     def run(self):
-        logger.info("Engine running!")
+        logger.info("MotorThread running!")
         # os.system('setfont Lat7-Terminus12x6')
         leds.set_color("LEFT", "BLACK")
         leds.set_color("RIGHT", "BLACK")
@@ -201,64 +263,59 @@ class MotorThread(threading.Thread):
         while running:
             # Proportional control
             if shoulder_speed != 0:
-                if shoulder_speed > 0:
-                    shoulder_motors.on(shoulder_speed, shoulder_speed)
-                else:
-                    shoulder_motors.on(shoulder_speed, shoulder_speed)
+                shoulder_motors.on(shoulder_speed, shoulder_speed)
             elif shoulder_motors.is_running:
                 shoulder_motors.stop()
-
+            
             # Proportional control
             if elbow_speed != 0:
-                if elbow_speed > 0:
-                    elbow_motor.on(elbow_speed)
-                else:
-                    elbow_motor.on(elbow_speed)
+                elbow_motor.on(map_speed(elbow_speed))
             elif elbow_motor.is_running:
                 elbow_motor.stop()
 
             # on/off control
-            if waist_left:
-                waist_motor.on(-SLOW_SPEED)
-            elif waist_right:
-                waist_motor.on(SLOW_SPEED)
-            elif waist_motor.is_running:
-                waist_motor.stop()
+            if not moving_to_color:
+                if waist_left:
+                    waist_motor.on(map_speed(-SLOW_SPEED))
+                elif waist_right:
+                    waist_motor.on(map_speed(SLOW_SPEED))
+                elif waist_motor.is_running:
+                    waist_motor.stop()
 
             # on/off control
             if roll_left:
-                roll_motor.on(-SLOW_SPEED)
+                roll_motor.on(map_speed(-SLOW_SPEED))
             elif roll_right:
-                roll_motor.on(SLOW_SPEED)
+                roll_motor.on(map_speed(SLOW_SPEED))
             elif roll_motor.is_running:
                 roll_motor.stop()
 
             # on/off control
             if pitch_up:
-                pitch_motor.on(VERY_SLOW_SPEED)
+                pitch_motor.on(map_speed(VERY_SLOW_SPEED))
             elif pitch_down:
-                pitch_motor.on(-VERY_SLOW_SPEED)
+                pitch_motor.on(map_speed(-VERY_SLOW_SPEED))
             elif pitch_motor.is_running:
                 pitch_motor.stop()
 
             # on/off control
             if spin_left:
-                spin_motor.on(-SLOW_SPEED)
+                spin_motor.on(map_speed(-SLOW_SPEED))
             elif spin_right:
-                spin_motor.on(SLOW_SPEED)
+                spin_motor.on(map_speed(SLOW_SPEED))
             elif spin_motor.is_running:
                 spin_motor.stop()
 
             # on/off control
             if grabber_motor:
                 if grabber_open:
-                    grabber_motor.on(NORMAL_SPEED, False)
+                    grabber_motor.on(map_speed(NORMAL_SPEED), False)
                 elif grabber_close:
-                    grabber_motor.on(-NORMAL_SPEED, False)
+                    grabber_motor.on(map_speed(-NORMAL_SPEED), False)
                 elif grabber_motor.is_running:
                     grabber_motor.stop()
         
-        logger.info("Engine stopping!")
+        logger.info("MotorThread stopping!")
 
 
 # Ensure clean shutdown on CTRL+C
@@ -270,12 +327,21 @@ motor_thread = MotorThread()
 motor_thread.setDaemon(True)
 motor_thread.start()
 
+if color_sensor:
+    base_align_thread = BaseAlignThread()
+    base_align_thread.setDaemon(True)
+    base_align_thread.start()
+
 for event in gamepad.read_loop():  # this loops infinitely
     if event.type == 3:  # stick input
         if event.code == 0:  # Left stick X-axis
             shoulder_speed = scale_stick(event.value, invert=True)
         elif event.code == 3:  # Right stick X-axis
             elbow_speed = scale_stick(event.value)
+        elif event.code == 17:  # dpad up/down
+            speed_modifier = event.value
+        elif event.code == 16:  # dpad left/right
+            base_to_color = event.value
 
     elif event.type == 1:  # button input
 
