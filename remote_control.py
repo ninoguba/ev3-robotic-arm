@@ -157,7 +157,7 @@ def log_power_info():
 
 
 speed_modifier = 0
-def map_speed(speed):
+def calculate_speed(speed):
     if speed_modifier == 0:
         return speed
     elif speed_modifier == -1:  # dpad up
@@ -166,33 +166,48 @@ def map_speed(speed):
         return speed / 1.5
     
 
-base_to_color = 0
-moving_to_color = False
-def move_base_to_color(base_to_color):
-    if base_to_color == -1:
+waist_target_color = 0
+aligning_waist = False
+def align_waist_to_color(waist_target_color):
+    if waist_target_color == -1:
         target_color = ColorSensor.COLOR_RED
-    elif base_to_color == 1:
+    elif waist_target_color == 1:
         target_color = ColorSensor.COLOR_BLUE
     else:
+        # if someone asks us to move to an unknown/unmapped
+        # color, just make this a noop.
         return
     
-    global moving_to_color
-    moving_to_color = True
+    # Set a flag for the MotorThread to prevent stopping the waist motor while
+    # we're trying to align it
+    global aligning_waist
+    aligning_waist = True
+
+    # If we're not on the correct color, start moving but make sure there's a 
+    # timeout to prevent trying forever.
     if color_sensor.color != target_color:
         print('Moving to color {}...'.format(target_color))
         waist_motor.on(NORMAL_SPEED)
+
         max_iterations = 100
         iterations = 0
         while color_sensor.color != target_color:
+            # wait a bit between checks. Ideally there would be a wait_for_color() 
+            # method or something, but as far as I know that's not possible with the 
+            # current libraries, so we do it like this.
             time.sleep(0.1)
+            
+            # prevent running forver
             iterations += 1
             if iterations >= max_iterations:
                 print('Failed to align base to requested color {}'.format(target_color))
                 break
-
+        
+        # we're either aligned or reached a timeout. Stop moving.
         waist_motor.stop()
 
-    moving_to_color = False
+    # update flag for MotorThead so waist control works again.
+    aligning_waist = False
 
 
 def clean_shutdown(signal_received=None, frame=None):
@@ -236,8 +251,8 @@ class BaseAlignThread(threading.Thread):
     def run(self):
         logger.info("BaseAlignThread running!")
         while running:
-            if base_to_color != 0 and not moving_to_color:
-                move_base_to_color(base_to_color)
+            if waist_target_color != 0 and not aligning_waist:
+                align_waist_to_color(waist_target_color)
             time.sleep(2)  # prevent performance impact, drawback is you need to hold the button for a bit before it registers
         logger.info("BaseAlignThread stopping!")
 
@@ -269,49 +284,49 @@ class MotorThread(threading.Thread):
             
             # Proportional control
             if elbow_speed != 0:
-                elbow_motor.on(map_speed(elbow_speed))
+                elbow_motor.on(calculate_speed(elbow_speed))
             elif elbow_motor.is_running:
                 elbow_motor.stop()
 
             # on/off control
-            if not moving_to_color:
+            if not aligning_waist:
                 if waist_left:
-                    waist_motor.on(map_speed(-SLOW_SPEED))
+                    waist_motor.on(calculate_speed(-SLOW_SPEED))
                 elif waist_right:
-                    waist_motor.on(map_speed(SLOW_SPEED))
+                    waist_motor.on(calculate_speed(SLOW_SPEED))
                 elif waist_motor.is_running:
                     waist_motor.stop()
 
             # on/off control
             if roll_left:
-                roll_motor.on(map_speed(-SLOW_SPEED))
+                roll_motor.on(calculate_speed(-SLOW_SPEED))
             elif roll_right:
-                roll_motor.on(map_speed(SLOW_SPEED))
+                roll_motor.on(calculate_speed(SLOW_SPEED))
             elif roll_motor.is_running:
                 roll_motor.stop()
 
             # on/off control
             if pitch_up:
-                pitch_motor.on(map_speed(VERY_SLOW_SPEED))
+                pitch_motor.on(calculate_speed(VERY_SLOW_SPEED))
             elif pitch_down:
-                pitch_motor.on(map_speed(-VERY_SLOW_SPEED))
+                pitch_motor.on(calculate_speed(-VERY_SLOW_SPEED))
             elif pitch_motor.is_running:
                 pitch_motor.stop()
 
             # on/off control
             if spin_left:
-                spin_motor.on(map_speed(-SLOW_SPEED))
+                spin_motor.on(calculate_speed(-SLOW_SPEED))
             elif spin_right:
-                spin_motor.on(map_speed(SLOW_SPEED))
+                spin_motor.on(calculate_speed(SLOW_SPEED))
             elif spin_motor.is_running:
                 spin_motor.stop()
 
             # on/off control
             if grabber_motor:
                 if grabber_open:
-                    grabber_motor.on(map_speed(NORMAL_SPEED), False)
+                    grabber_motor.on(calculate_speed(NORMAL_SPEED), False)
                 elif grabber_close:
-                    grabber_motor.on(map_speed(-NORMAL_SPEED), False)
+                    grabber_motor.on(calculate_speed(-NORMAL_SPEED), False)
                 elif grabber_motor.is_running:
                     grabber_motor.stop()
         
@@ -323,15 +338,18 @@ signal(SIGINT, clean_shutdown)
 
 log_power_info()
 
+# Main motor control thread
 motor_thread = MotorThread()
 motor_thread.setDaemon(True)
 motor_thread.start()
 
+# We only need the BaseAlignThread if we detected a color sensor
 if color_sensor:
     base_align_thread = BaseAlignThread()
     base_align_thread.setDaemon(True)
     base_align_thread.start()
 
+# Handle gamepad input
 for event in gamepad.read_loop():  # this loops infinitely
     if event.type == 3:  # stick input
         if event.code == 0:  # Left stick X-axis
@@ -341,7 +359,7 @@ for event in gamepad.read_loop():  # this loops infinitely
         elif event.code == 17:  # dpad up/down
             speed_modifier = event.value
         elif event.code == 16:  # dpad left/right
-            base_to_color = event.value
+            waist_target_color = event.value
 
     elif event.type == 1:  # button input
 
