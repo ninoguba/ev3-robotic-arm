@@ -186,7 +186,7 @@ def align_waist_to_color(waist_target_color):
     # If we're not on the correct color, start moving but make sure there's a 
     # timeout to prevent trying forever.
     if color_sensor.color != target_color:
-        print('Moving to color {}...'.format(target_color))
+        logger.info('Moving to color {}...'.format(target_color))
         waist_motor.on(NORMAL_SPEED)
 
         max_iterations = 100
@@ -200,7 +200,7 @@ def align_waist_to_color(waist_target_color):
             # prevent running forver
             iterations += 1
             if iterations >= max_iterations:
-                print('Failed to align base to requested color {}'.format(target_color))
+                logger.info('Failed to align base to requested color {}'.format(target_color))
                 break
         
         # we're either aligned or reached a timeout. Stop moving.
@@ -406,7 +406,6 @@ for event in gamepad.read_loop():  # this loops infinitely
                 pitch_down = False
 
         elif event.code == 312:  # L2
-            # print(event)
             if event.value == 1:
                 spin_right = False
                 spin_left = True
