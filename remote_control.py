@@ -104,7 +104,7 @@ try:
     color_sensor.mode = ColorSensor.MODE_COL_COLOR
     logger.info("Color sensor detected!")
 except DeviceNotFound:
-    logger.info("Color sensor not detected - running without it...")
+    logger.info("Color sensor not detected (primary EV3, input 1) - running without it...")
     color_sensor = False
 
 # Motors
@@ -124,7 +124,7 @@ try:
     grabber_motor.stop_action = remote_motor.MediumMotor.STOP_ACTION_COAST
     logger.info("Grabber motor detected!")
 except DeviceNotFound:
-    logger.info("Grabber motor not detected - running without it...")
+    logger.info("Grabber motor not detected (secondary EV3, port D) - running without it...")
     grabber_motor = False
 
 
