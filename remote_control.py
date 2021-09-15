@@ -7,6 +7,10 @@
 # - improved gamepad responsiveness
 # - proportional control for some motors
 # - code cleanup / simplify
+# v2.1 refinements by Marno van der Molen:
+# - simlify code
+# - allow changing speed of movement by holding d-pad up/down
+# - optionally support a color sensor to align waist by pressing d-pad left/right
 #
 __author__ = 'Nino Guba'
 
