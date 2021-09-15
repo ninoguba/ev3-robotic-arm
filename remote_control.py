@@ -200,7 +200,7 @@ def align_waist_to_color(waist_target_color):
             # prevent running forver
             iterations += 1
             if iterations >= max_iterations:
-                logger.info('Failed to align base to requested color {}'.format(target_color))
+                logger.info('Failed to align waist to requested color {}'.format(target_color))
                 break
         
         # we're either aligned or reached a timeout. Stop moving.
@@ -244,17 +244,17 @@ def clean_shutdown(signal_received=None, frame=None):
     sys.exit(0)
 
 
-class BaseAlignThread(threading.Thread):
+class WaistAlignThread(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
 
     def run(self):
-        logger.info("BaseAlignThread running!")
+        logger.info("WaistAlignThread running!")
         while running:
             if waist_target_color != 0 and not aligning_waist:
                 align_waist_to_color(waist_target_color)
             time.sleep(2)  # prevent performance impact, drawback is you need to hold the button for a bit before it registers
-        logger.info("BaseAlignThread stopping!")
+        logger.info("WaistAlignThread stopping!")
 
 
 class MotorThread(threading.Thread):
@@ -343,11 +343,11 @@ motor_thread = MotorThread()
 motor_thread.setDaemon(True)
 motor_thread.start()
 
-# We only need the BaseAlignThread if we detected a color sensor
+# We only need the WaistAlignThread if we detected a color sensor
 if color_sensor:
-    base_align_thread = BaseAlignThread()
-    base_align_thread.setDaemon(True)
-    base_align_thread.start()
+    waist_align_thread = WaistAlignThread()
+    waist_align_thread.setDaemon(True)
+    waist_align_thread.start()
 
 # Handle gamepad input
 for event in gamepad.read_loop():  # this loops infinitely
