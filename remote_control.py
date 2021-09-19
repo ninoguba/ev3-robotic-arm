@@ -354,7 +354,8 @@ class MotorThread(threading.Thread):
             # NOTE: I'm using knob wheels to control the grabber, which is not smoothly rotating 
             # at these low speeds. Therefor the grabber has to move a bit quicker for me, but I 
             # think when using regular gears the 7 ratio should be sufficient.
-            GRABBER_SPIN_RATIO = 6.5
+            # NOTE: Yes, with regular gears the calculated ratio is correct!
+            GRABBER_SPIN_RATIO = 7
             if spin_left:
                 spin_motor_speed = calculate_speed(-SLOW_SPEED)
                 spin_motor.on(spin_motor_speed)
