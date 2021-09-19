@@ -15,6 +15,7 @@
 # - maintain grabber grip during spin
 # - increase joystick deadzone a bit to prevent unintended movement while pressing L3/R3
 # - start work on calibration support using touch sensors
+# - prevent calculate_speed() returning values over 100 which causes exceptions
 
 __author__ = 'Nino Guba'
 
@@ -180,13 +181,13 @@ def log_power_info():
 
 
 speed_modifier = 0
-def calculate_speed(speed):
+def calculate_speed(speed, max=100):
     if speed_modifier == 0:
-        return speed
+        return min(speed, max)
     elif speed_modifier == -1:  # dpad up
-        return speed * 1.5
+        return min(speed * 1.5, max)
     elif speed_modifier == 1:  # dpad down
-        return speed / 1.5
+        return min(speed / 1.5, max)
     
 
 waist_target_color = 0
@@ -307,7 +308,7 @@ class MotorThread(threading.Thread):
             
             # Proportional control
             if elbow_speed != 0:
-                elbow_motor.on(calculate_speed(elbow_speed))
+                elbow_motor.on(elbow_speed)
             elif elbow_motor.is_running:
                 elbow_motor.stop()
 
@@ -329,6 +330,9 @@ class MotorThread(threading.Thread):
                 roll_motor.stop()
 
             # on/off control
+            #
+            # Pitch affects grabber as well, but to a lesser degree. We could improve this 
+            # in the future to adjust grabber based on pitch movement as well.
             if pitch_up:
                 pitch_motor.on(calculate_speed(VERY_SLOW_SPEED))
             elif pitch_down:
@@ -341,32 +345,32 @@ class MotorThread(threading.Thread):
             # If we keep spinning, the grabber motor can get stuck because it remains stationary
             # but is forced to move around the worm gear. We need to adjust it while spinning.
             # 
-            # spin motor: 7.5:1 (=22RPM) 
+            # spin motor: 7:1 (=23.6RPM) 
             # grabber motor: 1:1 (=165RPM) untill the worm gear which we need to keep steady
             # 
-            # So, I think the grabber_motor needs to move 7.5 times slower than the spin_motor 
+            # So, I think the grabber_motor needs to move 7 times slower than the spin_motor 
             # to maintain it's position.
             # 
             # NOTE: I'm using knob wheels to control the grabber, which is not smoothly rotating 
             # at these low speeds. Therefor the grabber has to move a bit quicker for me, but I 
-            # think when using regular gears the 7.5 ratio should be sufficient.
-            GRABBER_RATIO = 6.5
+            # think when using regular gears the 7 ratio should be sufficient.
+            GRABBER_SPIN_RATIO = 6.5
             if spin_left:
                 spin_motor_speed = calculate_speed(-SLOW_SPEED)
                 spin_motor.on(spin_motor_speed)
                 if grabber_motor:
                     # determine grabber_motor speed based on spin_motor speed & invert
-                    grabber_sync_speed = (spin_motor_speed / GRABBER_RATIO) * -1
+                    grabber_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
                     grabber_motor.on(grabber_sync_speed, False)
-                    logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
             elif spin_right:
                 spin_motor_speed = calculate_speed(SLOW_SPEED)
                 spin_motor.on(spin_motor_speed)
                 if grabber_motor:
                     # determine grabber_motor speed based on spin_motor speed & invert
-                    grabber_sync_speed = (spin_motor_speed / GRABBER_RATIO) * -1
+                    grabber_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
                     grabber_motor.on(grabber_sync_speed, False)
-                    logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
             elif spin_motor.is_running:
                 spin_motor.stop()
                 if grabber_motor:
