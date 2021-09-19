@@ -360,17 +360,17 @@ class MotorThread(threading.Thread):
                 spin_motor.on(spin_motor_speed)
                 if grabber_motor:
                     # determine grabber_motor speed based on spin_motor speed & invert
-                    grabber_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
-                    grabber_motor.on(grabber_sync_speed, False)
-                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
+                    grabber_spin_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
+                    grabber_motor.on(grabber_spin_sync_speed, False)
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_spin_sync_speed))
             elif spin_right:
                 spin_motor_speed = calculate_speed(SLOW_SPEED)
                 spin_motor.on(spin_motor_speed)
                 if grabber_motor:
                     # determine grabber_motor speed based on spin_motor speed & invert
-                    grabber_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
-                    grabber_motor.on(grabber_sync_speed, False)
-                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_sync_speed))
+                    grabber_spin_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
+                    grabber_motor.on(grabber_spin_sync_speed, False)
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_spin_sync_speed))
             elif spin_motor.is_running:
                 spin_motor.stop()
                 if grabber_motor:
