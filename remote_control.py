@@ -11,7 +11,12 @@
 # - simlify code
 # - allow changing speed of movement by holding d-pad up/down
 # - optionally support a color sensor to align waist by pressing d-pad left/right
-#
+# v2.2 minor improvements by Marno van der Molen
+# - maintain grabber grip during spin
+# - increase joystick deadzone a bit to prevent unintended movement while pressing L3/R3
+# - start work on calibration support using touch sensors
+# - prevent calculate_speed() returning values over 100 which causes exceptions
+
 __author__ = 'Nino Guba'
 
 import logging
@@ -25,8 +30,8 @@ import rpyc
 from signal import signal, SIGINT
 from ev3dev2 import DeviceNotFound
 from ev3dev2.led import Leds
-from ev3dev2.sensor import INPUT_1
-from ev3dev2.sensor.lego import ColorSensor
+from ev3dev2.sensor import INPUT_1, INPUT_2, INPUT_3, INPUT_4
+from ev3dev2.sensor.lego import ColorSensor, TouchSensor
 from ev3dev2.motor import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D, LargeMotor, MoveTank
 from ev3dev2.power import PowerSupply
 
@@ -38,6 +43,7 @@ from math_helper import scale_stick
 
 # Config
 REMOTE_HOST = '10.42.0.3'
+JOYSTICK_DEADZONE = 20
 
 # Define speeds
 FULL_SPEED = 100
@@ -111,6 +117,20 @@ except DeviceNotFound:
     logger.info("Color sensor not detected (primary EV3, input 1) - running without it...")
     color_sensor = False
 
+try:
+    shoulder_touch = TouchSensor(INPUT_3)
+    logger.info("Shoulder touch sensor detected!")
+except DeviceNotFound:
+    logger.info("Shoulder touch sensor not detected (primary EV3, input 3) - running without it...")
+    shoulder_touch = False
+
+try:
+    elbow_touch = TouchSensor(INPUT_4)
+    logger.info("Elbow touch sensor detected!")
+except DeviceNotFound:
+    logger.info("Elbow touch sensor not detected (primary EV3, input 4) - running without it...")
+    elbow_touch = False
+
 # Motors
 waist_motor = LargeMotor(OUTPUT_A)
 shoulder_motors = MoveTank(OUTPUT_B, OUTPUT_C)
@@ -161,13 +181,13 @@ def log_power_info():
 
 
 speed_modifier = 0
-def calculate_speed(speed):
+def calculate_speed(speed, max=100):
     if speed_modifier == 0:
-        return speed
+        return min(speed, max)
     elif speed_modifier == -1:  # dpad up
-        return speed * 1.5
+        return min(speed * 1.5, max)
     elif speed_modifier == 1:  # dpad down
-        return speed / 1.5
+        return min(speed / 1.5, max)
     
 
 waist_target_color = 0
@@ -288,7 +308,7 @@ class MotorThread(threading.Thread):
             
             # Proportional control
             if elbow_speed != 0:
-                elbow_motor.on(calculate_speed(elbow_speed))
+                elbow_motor.on(elbow_speed)
             elif elbow_motor.is_running:
                 elbow_motor.stop()
 
@@ -310,6 +330,9 @@ class MotorThread(threading.Thread):
                 roll_motor.stop()
 
             # on/off control
+            #
+            # Pitch affects grabber as well, but to a lesser degree. We could improve this 
+            # in the future to adjust grabber based on pitch movement as well.
             if pitch_up:
                 pitch_motor.on(calculate_speed(VERY_SLOW_SPEED))
             elif pitch_down:
@@ -318,15 +341,44 @@ class MotorThread(threading.Thread):
                 pitch_motor.stop()
 
             # on/off control
+            #
+            # If we keep spinning, the grabber motor can get stuck because it remains stationary
+            # but is forced to move around the worm gear. We need to adjust it while spinning.
+            # 
+            # spin motor: 7:1 (=23.6RPM) 
+            # grabber motor: 1:1 (=165RPM) untill the worm gear which we need to keep steady
+            # 
+            # So, I think the grabber_motor needs to move 7 times slower than the spin_motor 
+            # to maintain it's position.
+            # 
+            # NOTE: I'm using knob wheels to control the grabber, which is not smoothly rotating 
+            # at these low speeds. Therefor the grabber has to move a bit quicker for me, but I 
+            # think when using regular gears the 7 ratio should be sufficient.
+            # NOTE: Yes, with regular gears the calculated ratio is correct!
+            GRABBER_SPIN_RATIO = 7
             if spin_left:
-                spin_motor.on(calculate_speed(-SLOW_SPEED))
+                spin_motor_speed = calculate_speed(-SLOW_SPEED)
+                spin_motor.on(spin_motor_speed)
+                if grabber_motor:
+                    # determine grabber_motor speed based on spin_motor speed & invert
+                    grabber_spin_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
+                    grabber_motor.on(grabber_spin_sync_speed, False)
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_spin_sync_speed))
             elif spin_right:
-                spin_motor.on(calculate_speed(SLOW_SPEED))
+                spin_motor_speed = calculate_speed(SLOW_SPEED)
+                spin_motor.on(spin_motor_speed)
+                if grabber_motor:
+                    # determine grabber_motor speed based on spin_motor speed & invert
+                    grabber_spin_sync_speed = (spin_motor_speed / GRABBER_SPIN_RATIO) * -1
+                    grabber_motor.on(grabber_spin_sync_speed, False)
+                    # logger.info('Spin motor {}, grabber {}'.format(spin_motor_speed, grabber_spin_sync_speed))
             elif spin_motor.is_running:
                 spin_motor.stop()
+                if grabber_motor:
+                    grabber_motor.stop()
 
-            # on/off control
-            if grabber_motor:
+            # on/off control - can only control this directly if we're not currently spinning
+            elif grabber_motor:
                 if grabber_open:
                     grabber_motor.on(calculate_speed(NORMAL_SPEED), False)
                 elif grabber_close:
@@ -357,9 +409,9 @@ if color_sensor:
 for event in gamepad.read_loop():  # this loops infinitely
     if event.type == 3:  # stick input
         if event.code == 0:  # Left stick X-axis
-            shoulder_speed = scale_stick(event.value, invert=True)
+            shoulder_speed = scale_stick(event.value, deadzone=JOYSTICK_DEADZONE, invert=True)
         elif event.code == 3:  # Right stick X-axis
-            elbow_speed = scale_stick(event.value)
+            elbow_speed = scale_stick(event.value, deadzone=JOYSTICK_DEADZONE)
         elif event.code == 17:  # dpad up/down
             speed_modifier = event.value
         elif event.code == 16:  # dpad left/right
